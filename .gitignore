@@ -1,4 +1,6 @@
+.DS_Store
 *.pkg
+*.deb
 result
 result-*
-7zunpacked/
+unpacked/

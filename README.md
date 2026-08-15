@@ -1,12 +1,13 @@
-# ubiquiti-apps
+# unifi-desktop-nix
 
-Nix packages and nix-darwin modules for Ubiquiti's macOS desktop apps:
+Nix packages and nix-darwin modules for Ubiquiti's macOS desktop apps,
+plus a NixOS package and module for WiFiman Desktop on Linux:
 
-| Package | App | Bundle ID |
-|---|---|---|
-| `wifiman-desktop` | WiFiman Desktop 1.2.8 | `ui.wifiman.desktop` |
-| `unifi-identity-endpoint` | UniFi Endpoint 4.1.1 | `com.ui.uid.standard-desktop` |
-| `unifi-identity-enterprise` | UID Enterprise 0.90.0 | `com.ui.uid.desktop` |
+| Package | App | Bundle ID | Platforms |
+|---|---|---|---|
+| `wifiman-desktop` | WiFiman Desktop 1.2.8 | `ui.wifiman.desktop` | macOS (arm64; x86_64 via overlay on nixpkgs 26.05), Linux (x86_64) |
+| `unifi-identity-endpoint` | UniFi Endpoint 4.1.1 | `com.ui.uid.standard-desktop` | macOS (arm64; x86_64 via overlay on nixpkgs 26.05) |
+| `unifi-identity-enterprise` | UID Enterprise 0.90.0 | `com.ui.uid.desktop` | macOS (arm64; x86_64 via overlay on nixpkgs 26.05) |
 
 All apps are unfree, notarized Developer ID binaries fetched from Ubiquiti's
 official download endpoints and installed byte-identical (their privileged
@@ -21,17 +22,17 @@ modification or re-signing is impossible by design).
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
     nix-darwin.url = "github:nix-darwin/nix-darwin";
     nix-darwin.inputs.nixpkgs.follows = "nixpkgs";
-    ubiquiti-apps.url = "github:<you>/ubiquiti-apps";
+    unifi-desktop-nix.url = "github:KristijanZic/unifi-desktop-nix";
   };
 
-  outputs = { nix-darwin, ubiquiti-apps, ... }: {
+  outputs = { nix-darwin, unifi-desktop-nix, ... }: {
     darwinConfigurations.yourHost = nix-darwin.lib.darwinSystem {
       modules = [
         # import only what you use:
-        ubiquiti-apps.darwinModules.wifiman-desktop
-        ubiquiti-apps.darwinModules.unifi-identity-endpoint
-        # ubiquiti-apps.darwinModules.unifi-identity-enterprise
-        # (or all of them: ubiquiti-apps.darwinModules.default)
+        unifi-desktop-nix.darwinModules.wifiman-desktop
+        unifi-desktop-nix.darwinModules.unifi-identity-endpoint
+        # unifi-desktop-nix.darwinModules.unifi-identity-enterprise
+        # (or all of them: unifi-desktop-nix.darwinModules.default)
 
         ({ lib, ... }: {
           nixpkgs.config.allowUnfreePredicate = pkg:
@@ -50,6 +51,39 @@ modification or re-signing is impossible by design).
 Each module applies this flake's overlay itself, so `pkgs.<name>` resolves
 without extra wiring.
 
+## NixOS (WiFiman Desktop on Linux)
+
+`wifiman-desktop` also packages the vendor's amd64 `.deb` for
+`x86_64-linux` (binaries patched with `autoPatchelfHook` against GTK3 /
+WebKitGTK 4.1, tray support via `libayatana-appindicator`). Enable the
+vendor's root daemon declaratively:
+
+```nix
+{
+  inputs.unifi-desktop-nix.url = "github:KristijanZic/unifi-desktop-nix";
+
+  outputs = { nixpkgs, unifi-desktop-nix, ... }: {
+    nixosConfigurations.yourHost = nixpkgs.lib.nixosSystem {
+      modules = [
+        unifi-desktop-nix.nixosModules.wifiman-desktop
+
+        ({ lib, ... }: {
+          services.wifiman-desktop.enable = true;
+          nixpkgs.config.allowUnfreePredicate = pkg:
+            builtins.elem (lib.getName pkg) [ "wifiman-desktop" ];
+        })
+      ];
+    };
+  };
+}
+```
+
+The module installs the package, mirrors the vendor's systemd unit
+(`wifiman-desktopd`, root, `Restart=always`) with a store-path `ExecStart`,
+and puts the deb's runtime `Depends` (`net-tools`, `iw`, `resolvconf`) on
+the service's PATH. The patched vendor unit is also shipped at
+`$out/lib/systemd/system/` for non-NixOS distros.
+
 ## What the modules do
 
 All modules install the app to its vendor-canonical path in `/Applications`
@@ -67,6 +101,13 @@ via an idempotent (stamp-file-guarded) activation script, because:
 
 ## Caveats
 
+- **x86_64-darwin is dropped in nixpkgs 26.11** (this flake's `nixpkgs`
+  input), so the flake no longer exposes it — its dependency tree doesn't
+  evaluate there anymore. The Intel `.pkg` sources remain in the packages;
+  use the overlay against `nixpkgs-26.05-darwin` if you still need them.
+- **WiFiman on Linux**: the system tray icon requires a StatusNotifier/appindicator-capable
+  desktop environment; the daemon needs CAP_NET_ADMIN-ish root (runs as root,
+  like the vendor unit) for WireGuard. Tested against the vendor `.deb` layout.
 - **First launch of the Identity apps requires approving the network system
   extension** in System Settings (and a login item for Enterprise). This
   cannot be automated without MDM.

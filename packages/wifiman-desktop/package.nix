@@ -8,10 +8,27 @@
   curl,
   jq,
   common-updater-scripts,
+  dpkg,
+  autoPatchelfHook,
+  wrapGAppsHook3,
+  glib-networking,
+  gtk3,
+  glib,
+  cairo,
+  pango,
+  gdk-pixbuf,
+  libsoup_3,
+  webkitgtk_4_1,
+  libayatana-appindicator,
+  nettools,
+  iw,
+  openresolv,
 }:
 
 let
   inherit (stdenvNoCC.hostPlatform) system;
+  isLinux = stdenvNoCC.hostPlatform.isLinux;
+  isDarwin = stdenvNoCC.hostPlatform.isDarwin;
 in
 stdenvNoCC.mkDerivation (finalAttrs: {
   pname = "wifiman-desktop";
@@ -22,44 +39,107 @@ stdenvNoCC.mkDerivation (finalAttrs: {
   __structuredAttrs = true;
   strictDeps = true;
 
-  nativeBuildInputs = [
-    xar
-    cpio
+  nativeBuildInputs =
+    lib.optionals isDarwin [
+      xar
+      cpio
+    ]
+    ++ lib.optionals isLinux [
+      dpkg
+      autoPatchelfHook
+      wrapGAppsHook3
+    ];
+
+  buildInputs = lib.optionals isLinux [
+    gtk3
+    glib
+    cairo
+    pango
+    gdk-pixbuf
+    libsoup_3
+    webkitgtk_4_1
+    glib-networking
   ];
 
-  unpackPhase = ''
-    runHook preUnpack
+  # dlopened at runtime (libappindicator-sys), not in DT_NEEDED,
+  # so autoPatchelf appends its lib path to RPATH instead
+  runtimeDependencies = lib.optionals isLinux [ libayatana-appindicator ];
 
-    # xar recursively expands the component pkgs as well,
-    # leaving us with {WifimanDesktop,WiFimanNetworkHelper}.pkg/Payload
-    xar -xf "$src"
+  unpackPhase =
+    if isLinux then
+      ''
+        runHook preUnpack
 
-    mkdir app && (cd app && gzip -dc < ../WifimanDesktop.pkg/Payload | cpio -i)
-    mkdir companion && (cd companion && gzip -dc < ../WiFimanNetworkHelper.pkg/Payload | cpio -i)
+        dpkg-deb -x "$src" unpacked
 
-    # The payload stores code-signature xattrs as AppleDouble (._) files;
-    # the macOS installer restores them as xattrs, GNU cpio cannot, so drop them
-    find app companion -name '._*' -delete
+        sourceRoot=unpacked
+        runHook postUnpack
+      ''
+    else
+      ''
+        runHook preUnpack
 
-    # Mirror the official postinstall script:
-    # nest the companion app inside the main app's Resources
-    mv "companion/WiFiman Companion.app" "app/WiFiman Desktop.app/Contents/Resources/"
+        # xar recursively expands the component pkgs as well,
+        # leaving us with {WifimanDesktop,WiFimanNetworkHelper}.pkg/Payload
+        xar -xf "$src"
 
-    sourceRoot=app
-    runHook postUnpack
-  '';
+        mkdir app && (cd app && gzip -dc < ../WifimanDesktop.pkg/Payload | cpio -i)
+        mkdir companion && (cd companion && gzip -dc < ../WiFimanNetworkHelper.pkg/Payload | cpio -i)
+
+        # The payload stores code-signature xattrs as AppleDouble (._) files;
+        # the macOS installer restores them as xattrs, GNU cpio cannot, so drop them
+        find app companion -name '._*' -delete
+
+        # Mirror the official postinstall script:
+        # nest the companion app inside the main app's Resources
+        mv "companion/WiFiman Companion.app" "app/WiFiman Desktop.app/Contents/Resources/"
+
+        sourceRoot=app
+        runHook postUnpack
+      '';
 
   dontConfigure = true;
   dontBuild = true;
-  dontFixup = true;
+  # linux needs fixup: patchelf, gapps wrapping, patchShebangs
+  dontFixup = isDarwin;
 
-  installPhase = ''
-    runHook preInstall
+  installPhase =
+    if isLinux then
+      ''
+        runHook preInstall
 
-    mkdir -p "$out/Applications"
-    cp -R "WiFiman Desktop.app" "$out/Applications/"
+        mkdir -p "$out/bin" "$out/lib" "$out/share/applications" "$out/lib/systemd/system"
 
-    runHook postInstall
+        cp usr/bin/wifiman-desktop "$out/bin/"
+        cp -R usr/lib/wifiman-desktop "$out/lib/"
+        cp usr/share/applications/wifiman-desktop.desktop "$out/share/applications/"
+        cp -R usr/share/icons "$out/share/"
+
+        substituteInPlace usr/lib/wifiman-desktop/wifiman-desktop.service \
+          --replace-fail '"/usr/lib/wifiman-desktop/wifiman-desktopd"' "\"$out/lib/wifiman-desktop/wifiman-desktopd\""
+        cp usr/lib/wifiman-desktop/wifiman-desktop.service "$out/lib/systemd/system/"
+
+        runHook postInstall
+      ''
+    else
+      ''
+        runHook preInstall
+
+        mkdir -p "$out/Applications"
+        cp -R "WiFiman Desktop.app" "$out/Applications/"
+
+        runHook postInstall
+      '';
+
+  # the deb Depends on tools the GUI shells out to
+  preFixup = lib.optionalString isLinux ''
+    gappsWrapperArgs+=(--prefix PATH : ${
+      lib.makeBinPath [
+        nettools
+        iw
+        openresolv
+      ]
+    })
   '';
 
   passthru = {
@@ -72,6 +152,11 @@ stdenvNoCC.mkDerivation (finalAttrs: {
       x86_64-darwin = fetchurl {
         url = "https://desktop.wifiman.com/wifiman-desktop-${finalAttrs.version}-amd64.pkg";
         hash = "sha256-wPkP+Kfs30haFii3AjWjshCDohLhiNprlB5Euk6a//w=";
+      };
+
+      x86_64-linux = fetchurl {
+        url = "https://desktop.wifiman.com/wifiman-desktop-${finalAttrs.version}-amd64.deb";
+        hash = "sha256-R+MbwxfnBV9VcYWeM1NM08LX1Mz9+fy4r6uZILydlks=";
       };
     };
 
@@ -120,7 +205,8 @@ stdenvNoCC.mkDerivation (finalAttrs: {
     homepage = "https://wifiman.com/";
     downloadPage = "https://ui.com/download/app/wifiman-desktop";
     license = lib.licenses.unfree;
-    platforms = lib.platforms.darwin;
+    platforms = lib.platforms.darwin ++ [ "x86_64-linux" ];
+    mainProgram = "wifiman-desktop";
     sourceProvenance = with lib.sourceTypes; [ binaryNativeCode ];
     identifiers = {
       cpeParts = {
