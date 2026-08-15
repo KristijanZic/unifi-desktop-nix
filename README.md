@@ -35,6 +35,10 @@ modification or re-signing is impossible by design).
         # (or all of them: unifi-desktop-nix.darwinModules.default)
 
         ({ lib, ... }: {
+          # wifiman-desktop has an enable flag (same option path as NixOS);
+          # the identity modules take effect as soon as they're imported
+          services.wifiman-desktop.enable = true;
+
           nixpkgs.config.allowUnfreePredicate = pkg:
             builtins.elem (lib.getName pkg) [
               "wifiman-desktop"
