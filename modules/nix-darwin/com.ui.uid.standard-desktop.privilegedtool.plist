@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleIdentifier</key>
+	<string>com.ui.uid.standard-desktop.privilegedtool</string>
+	<key>Label</key>
+	<string>com.ui.uid.standard-desktop.privilegedtool</string>
+	<key>MachServices</key>
+	<dict>
+		<key>com.ui.uid.standard-desktop.privilegedtool</key>
+		<true/>
+	</dict>
+	<key>Program</key>
+	<string>/Library/PrivilegedHelperTools/com.ui.uid.standard-desktop.privilegedtool</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/Library/PrivilegedHelperTools/com.ui.uid.standard-desktop.privilegedtool</string>
+	</array>
+	<key>SMAuthorizedClients</key>
+	<array>
+		<string>anchor apple generic and identifier "com.ui.uid.standard-desktop.agent" and (certificate leaf[field.1.2.840.113635.100.6.1.9] /* exists */ or certificate 1[field.1.2.840.113635.100.6.2.6] /* exists */ and certificate leaf[field.1.2.840.113635.100.6.1.13] /* exists */ and certificate leaf[subject.OU] = "4P645293E8")</string>
+	</array>
+</dict>
+</plist>
