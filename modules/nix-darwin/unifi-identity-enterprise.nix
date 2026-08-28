@@ -33,7 +33,8 @@ let
 in
 {
   system.activationScripts.postActivation.text = ''
-    mkdir -p -m 755 /Library/PrivilegedHelperTools
+    mkdir -p /Library/PrivilegedHelperTools
+    chmod 755 /Library/PrivilegedHelperTools
 
     # Skip if this exact store build is already installed
     if [ -f "${stampPath}" ] && [ "$(cat "${stampPath}")" = "${app}" ]; then
