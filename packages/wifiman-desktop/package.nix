@@ -90,8 +90,8 @@ stdenvNoCC.mkDerivation (finalAttrs: {
         # the macOS installer restores them as xattrs, GNU cpio cannot, so drop them
         find app companion -name '._*' -delete
 
-        # Mirror the official postinstall script:
-        # nest the companion app inside the main app's Resources
+        # Nest companion app inside the main app's Resources as required by
+        # getDarwinNetworks and getConnectedNetworkSignal in the GUI
         mv "companion/WiFiman Companion.app" "app/WiFiman Desktop.app/Contents/Resources/"
 
         sourceRoot=app

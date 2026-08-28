@@ -7,23 +7,27 @@
 
 # Why not nix-darwin's built-in app setup (system.build.applications)?
 # It rsyncs store apps into "/Applications/Nix Apps" with --delete and
-# --chmod=-w on every activation, which would wipe the daemon's runtime state
-# (service.json, wifiman-desktop.log — written into Contents/Resources) on
-# every rebuild. Wrapping can't help (the daemon locates its data dir via its
-# own executable path, kardianos/osext) and patching is a dead end (runtime-
-# derived path, Developer ID + TCC identity loss). We therefore copy the app
-# to the vendor's canonical path ourselves, preserving service.json.
+# --chmod=-w on every activation. The daemon binary (wifiman-desktopd) expects
+# its canonical host app at /Applications/WiFiman Desktop.app (exiting otherwise).
+# We copy the apps to /Applications ourselves, keeping them 100% byte-identical
+# to the notarized upstream bundles.
+#
+# By default, wifiman-desktopd writes service.json and wifiman-desktop.log to its
+# executable folder (Contents/Resources), which violates Apple Developer ID sealed
+# resources and triggers Gatekeeper damage alerts. We configure BASE to point to
+# /var/lib/wifiman-desktop and symlink static tools from the app bundle, keeping
+# the application bundle untouched and preserving daemon state across rebuilds.
 
 let
   cfg = config.services.wifiman-desktop;
   appName = "WiFiman Desktop.app";
   appPath = "/Applications/${appName}";
   stampPath = "/var/db/wifiman-desktop-nix-store-path";
+  dataDir = "/var/lib/wifiman-desktop";
   app = "${pkgs.wifiman-desktop}/Applications/${appName}";
 in
 {
-  options.services.wifiman-desktop.enable =
-    lib.mkEnableOption "WiFiman Desktop app and daemon";
+  options.services.wifiman-desktop.enable = lib.mkEnableOption "WiFiman Desktop app and daemon";
 
   config = lib.mkIf cfg.enable {
     # Declarative replacement for `wifiman-desktopd install`
@@ -32,6 +36,9 @@ in
       serviceConfig = {
         Label = "wifiman-desktop";
         ProgramArguments = [ "${appPath}/Contents/Resources/wifiman-desktopd" ];
+        EnvironmentVariables = {
+          BASE = dataDir;
+        };
         RunAtLoad = true;
         KeepAlive = true;
         SessionCreate = false;
@@ -54,9 +61,23 @@ in
 
     system.activationScripts.postActivation.text = ''
       mkdir -p /usr/local/var/log
+      mkdir -p "${dataDir}"
+      chmod 755 "${dataDir}"
 
-      # Skip if this exact store build is already installed
-      if [ -f "${stampPath}" ] && [ "$(cat "${stampPath}")" = "${app}" ]; then
+      # Truncate runaway log if it grew excessively
+      if [ -f "${dataDir}/wifiman-desktop.log" ]; then
+        if [ "$(stat -f%z "${dataDir}/wifiman-desktop.log" 2>/dev/null || echo 0)" -gt 10485760 ]; then
+          : > "${dataDir}/wifiman-desktop.log"
+        fi
+      fi
+
+      # Migrate legacy state from inside the app bundle if present
+      if [ -f "${appPath}/Contents/Resources/service.json" ] && [ ! -f "${dataDir}/service.json" ]; then
+        cp -p "${appPath}/Contents/Resources/service.json" "${dataDir}/service.json"
+      fi
+
+      # Skip app copying if this exact store build is already installed and present
+      if [ -d "${appPath}" ] && [ -f "${stampPath}" ] && [ "$(cat "${stampPath}")" = "${app}" ]; then
         true
       else
         echo "Installing ${appName} to /Applications"
@@ -64,25 +85,29 @@ in
         # Quit a running GUI so it doesn't keep running the old version
         osascript -e 'quit app "${appName}"' 2>/dev/null || true
 
-        # Preserve daemon state across rebuilds, like the official installer does
-        if [ -f "${appPath}/Contents/Resources/service.json" ]; then
-          cp "${appPath}/Contents/Resources/service.json" /tmp/.wifiman-desktop-service.json
-        fi
-
-        rm -rf "${appPath}"
+        rm -rf "${appPath}" "/Applications/WiFiman Companion.app"
         cp -R "${app}" "${appPath}"
-        chmod -R u+w "${appPath}"
-
-        if [ -f /tmp/.wifiman-desktop-service.json ]; then
-          mv /tmp/.wifiman-desktop-service.json "${appPath}/Contents/Resources/service.json"
-        fi
+        xattr -dr com.apple.quarantine "${appPath}" 2>/dev/null || true
 
         echo "${app}" > "${stampPath}"
-
-        # The daemon binary was replaced under a stable path, so the plist
-        # didn't change and nix-darwin won't restart it on its own
-        launchctl kickstart -k system/wifiman-desktop 2>/dev/null || true
       fi
+
+      # Symlink static resources (including hidden .env files) needed by the daemon into BASE
+      for item in "${appPath}/Contents/Resources"/* "${appPath}/Contents/Resources"/.[!.]*; do
+        [ -e "$item" ] || continue
+        fname="$(basename "$item")"
+        if [ "$fname" != "wifiman-desktopd" ] && [ "$fname" != "service.json" ] && [ "$fname" != "wifiman-desktop.log" ] && [ "$fname" != "WiFiman Companion.app" ]; then
+          ln -sfn "$item" "${dataDir}/$fname"
+        fi
+      done
+
+      # Restart daemon with updated environment and symlinks.
+      # Using 'launchctl kill SIGTERM' tells launchd to gracefully cycle the process;
+      # launchd's KeepAlive will immediately restart it with the updated binary/resources
+      # without blocking activation if launchd throttles rapid spawns.
+      launchctl kill SIGTERM system/wifiman-desktop 2>/dev/null \
+        || launchctl kickstart system/wifiman-desktop 2>/dev/null \
+        || true
     '';
   };
 }
