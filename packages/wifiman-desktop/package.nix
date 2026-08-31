@@ -128,6 +128,11 @@ stdenvNoCC.mkDerivation (finalAttrs: {
         mkdir -p "$out/Applications"
         cp -R "WiFiman Desktop.app" "$out/Applications/"
 
+        # Re-sign the bundle ad-hoc so that CodeResources accounts for the nested
+        # companion helper. This ensures the bundle's signature seal matches disk
+        # exactly, preventing macOS Gatekeeper from flagging it as damaged.
+        /usr/bin/codesign --force --deep --sign - "$out/Applications/WiFiman Desktop.app"
+
         runHook postInstall
       '';
 
