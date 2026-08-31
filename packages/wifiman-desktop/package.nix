@@ -128,10 +128,14 @@ stdenvNoCC.mkDerivation (finalAttrs: {
         mkdir -p "$out/Applications"
         cp -R "WiFiman Desktop.app" "$out/Applications/"
 
-        # Re-sign the bundle ad-hoc so that CodeResources accounts for the nested
-        # companion helper. This ensures the bundle's signature seal matches disk
-        # exactly, preventing macOS Gatekeeper from flagging it as damaged.
-        /usr/bin/codesign --force --deep --sign - "$out/Applications/WiFiman Desktop.app"
+        # Re-sign the bundle ad-hoc (inside-out, per Apple's recommendation) so
+        # that CodeResources accounts for the nested companion helper. Without
+        # this, Gatekeeper flags the bundle as damaged because files were added
+        # after Ubiquiti's original Developer ID seal.
+        /usr/bin/codesign --force --sign - \
+          "$out/Applications/WiFiman Desktop.app/Contents/Resources/WiFiman Companion.app"
+        /usr/bin/codesign --force --sign - \
+          "$out/Applications/WiFiman Desktop.app"
 
         runHook postInstall
       '';
