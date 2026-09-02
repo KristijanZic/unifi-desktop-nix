@@ -35,9 +35,10 @@ modification or re-signing is impossible by design).
         # (or all of them: unifi-desktop-nix.darwinModules.default)
 
         ({ lib, ... }: {
-          # wifiman-desktop has an enable flag (same option path as NixOS);
-          # the identity modules take effect as soon as they're imported
+          # Enable desired services declaratively:
           services.wifiman-desktop.enable = true;
+          services.unifi-identity-endpoint.enable = true;
+          # services.unifi-identity-enterprise.enable = true;
 
           nixpkgs.config.allowUnfreePredicate = pkg:
             builtins.elem (lib.getName pkg) [
@@ -90,18 +91,16 @@ the service's PATH. The patched vendor unit is also shipped at
 
 ## What the modules do
 
-All modules install the app to its vendor-canonical path in `/Applications`
-via an idempotent (stamp-file-guarded) activation script, because:
+All modules integrate with nix-darwin's native application management:
 
-- nix-darwin's built-in app setup rsyncs into `/Applications/Nix Apps` with
-  `--delete` and `--chmod=-w` on every activation — incompatible with apps
-  that keep runtime state in their bundle (WiFiman's `service.json`) or that
-  must live in `/Applications` (system extension hosts)
-- upgrades mirror the vendor pkg scripts: quit the app, remove legacy app
-  names, replace the bundle, preserve state where the vendor does
-- daemons/helpers are declared via `launchd.daemons` with plist contents
-  identical to the vendor-generated ones, so nix-darwin manages their
-  lifecycle (and removal when you drop the module)
+- Apps are added to `environment.systemPackages` and placed in `/Applications/Nix Apps`
+  via nix-darwin's built-in application activation script.
+- Disabling a service (`services.<name>.enable = false;`) or removing it from your
+  configuration automatically cleans up the app bundle from `/Applications/Nix Apps`,
+  unloads and removes launchd daemons, and cleans up privileged helper tools.
+- Background daemons and privileged helpers are bootstrapped and managed with their
+  vendor plists and permissions (`SMAuthorizedClients` Developer ID validation).
+- WiFiman Desktop runtime state is preserved across rebuilds in `/var/lib/wifiman-desktop`.
 
 ## Caveats
 
@@ -119,10 +118,6 @@ via an idempotent (stamp-file-guarded) activation script, because:
   and always serve the latest release. The pinned hash therefore fails on
   upstream updates — this is deliberate; bump `version` + `hash` together
   (`nix store prefetch-file <url>`).
-- Apps are intentionally **not** added to `environment.system-packages`; use
-  the darwin modules only.
-- Removing a module unloads its launchd daemons, but the copied app in
-  `/Applications` is left behind (same gap as the vendor's own uninstaller,
   which Homebrew also only approximates).
 
 ## Upstreaming to nixpkgs
