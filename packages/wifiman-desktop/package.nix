@@ -102,6 +102,7 @@ stdenvNoCC.mkDerivation (finalAttrs: {
   dontBuild = true;
   # linux needs fixup: patchelf, gapps wrapping, patchShebangs
   dontFixup = isDarwin;
+  dontAutoPatchelf = isLinux;
 
   installPhase =
     if isLinux then
@@ -149,6 +150,17 @@ stdenvNoCC.mkDerivation (finalAttrs: {
         openresolv
       ]
     })
+  '';
+
+  # Go binaries (wifiman-desktopd, wg, wireguard-go) in lib/wifiman-desktop
+  # segfault in dl_main when autoPatchelf adds DT_RUNPATH. Only autoPatchelf
+  # the Tauri GUI binary in bin/ and set the interpreter on the Go binaries.
+  postFixup = lib.optionalString isLinux ''
+    autoPatchelf -- "$out/bin"
+
+    for bin in "$out/lib/wifiman-desktop"/{wifiman-desktopd,wg,wireguard-go}; do
+      patchelf --set-interpreter "$(< "$NIX_BINTOOLS/nix-support/dynamic-linker")" "$bin"
+    done
   '';
 
   passthru = {

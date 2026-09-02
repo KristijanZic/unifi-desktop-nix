@@ -30,11 +30,25 @@ in
         pkgs.nettools
         pkgs.iw
         pkgs.openresolv
+        pkgs.iproute2
+        pkgs.wireguard-tools
+        pkgs.procps
       ];
+      environment = {
+        BASE = "/var/lib/wifiman-desktop";
+      };
+      preStart = ''
+        for file in ${pkgs.wifiman-desktop}/lib/wifiman-desktop/* ${pkgs.wifiman-desktop}/lib/wifiman-desktop/.env*; do
+          [ -e "$file" ] || continue
+          ln -sf "$file" "/var/lib/wifiman-desktop/$(basename "$file")"
+        done
+      '';
       serviceConfig = {
         User = "root";
         Restart = "always";
         RestartSec = 30;
+        WorkingDirectory = "/var/lib/wifiman-desktop";
+        StateDirectory = "wifiman-desktop";
         ExecStart = "${pkgs.wifiman-desktop}/lib/wifiman-desktop/wifiman-desktopd";
       };
     };
