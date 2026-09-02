@@ -23,6 +23,9 @@
   nettools,
   iw,
   openresolv,
+  wirelesstools,
+  networkmanager,
+  gawk,
 }:
 
 let
@@ -147,6 +150,9 @@ stdenvNoCC.mkDerivation (finalAttrs: {
       lib.makeBinPath [
         nettools
         iw
+        wirelesstools
+        networkmanager
+        gawk
         openresolv
       ]
     })

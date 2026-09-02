@@ -27,8 +27,13 @@ in
       after = [ "network.target" ];
       wantedBy = [ "multi-user.target" ];
       path = [
+        pkgs.coreutils
+        pkgs.bash
+        pkgs.gawk
         pkgs.nettools
         pkgs.iw
+        pkgs.wirelesstools
+        pkgs.networkmanager
         pkgs.openresolv
         pkgs.iproute2
         pkgs.wireguard-tools
