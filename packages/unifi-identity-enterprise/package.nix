@@ -58,7 +58,7 @@ stdenvNoCC.mkDerivation (finalAttrs: {
     runHook postInstall
   '';
 
-  passthru.updateScript = writeShellApplication {
+  passthru.updateScript = lib.getExe (writeShellApplication {
     name = "update-unifi-identity-enterprise";
     runtimeInputs = [
       curl
@@ -94,7 +94,7 @@ stdenvNoCC.mkDerivation (finalAttrs: {
 
       update-source-version "${finalAttrs.pname}" "$new_version" "" "$final_url" --ignore-same-version
     '';
-  };
+  });
 
   meta = {
     description = "UniFi Identity Enterprise — network access control and VPN client (Ubiquiti)";
