@@ -20,12 +20,13 @@
   libsoup_3,
   webkitgtk_4_1,
   libayatana-appindicator,
-  nettools,
+  net-tools,
   iw,
   openresolv,
   wirelesstools,
   networkmanager,
   gawk,
+  rcodesign,
 }:
 
 let
@@ -46,6 +47,7 @@ stdenvNoCC.mkDerivation (finalAttrs: {
     lib.optionals isDarwin [
       xar
       cpio
+      rcodesign
     ]
     ++ lib.optionals isLinux [
       dpkg
@@ -136,10 +138,11 @@ stdenvNoCC.mkDerivation (finalAttrs: {
         # that CodeResources accounts for the nested companion helper. Without
         # this, Gatekeeper flags the bundle as damaged because files were added
         # after Ubiquiti's original Developer ID seal.
-        /usr/bin/codesign --force --sign - \
-          "$out/Applications/WiFiman Desktop.app/Contents/Resources/WiFiman Companion.app"
-        /usr/bin/codesign --force --sign - \
-          "$out/Applications/WiFiman Desktop.app"
+        #
+        # Uses rcodesign (pure Rust) rather than host /usr/bin/codesign so that
+        # sandboxed Nix builds (e.g. nixpkgs-review / CI) succeed without sandbox errors.
+        rcodesign sign "$out/Applications/WiFiman Desktop.app/Contents/Resources/WiFiman Companion.app"
+        rcodesign sign "$out/Applications/WiFiman Desktop.app"
 
         runHook postInstall
       '';
@@ -148,7 +151,7 @@ stdenvNoCC.mkDerivation (finalAttrs: {
   preFixup = lib.optionalString isLinux ''
     gappsWrapperArgs+=(--prefix PATH : ${
       lib.makeBinPath [
-        nettools
+        net-tools
         iw
         wirelesstools
         networkmanager
